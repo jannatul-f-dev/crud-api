@@ -1,6 +1,33 @@
 from fastapi import FastAPI, HTTPException, Body
+import sqlite3
 
 app = FastAPI()
+def get_db():
+    conn = sqlite3.connect("tasks.db")
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    conn = get_db()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY,
+            title TEXT NOT NULL,
+            done BOOLEAN NOT NULL DEFAULT 0
+        )
+    """)
+    conn.commit()
+
+    cursor = conn.execute("SELECT COUNT(*) FROM tasks")
+    count = cursor.fetchone()[0]
+    if count == 0:
+        conn.execute("INSERT INTO tasks (title, done) VALUES (?, ?)", ("Buy milk", False))
+        conn.execute("INSERT INTO tasks (title, done) VALUES (?, ?)", ("Clean room", True))
+        conn.execute("INSERT INTO tasks (title, done) VALUES (?, ?)", ("Read book", False))
+        conn.commit()
+    conn.close()
+
+init_db()
 
 @app.get("/")
 def home():
