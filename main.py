@@ -46,15 +46,18 @@ tasks = [
 
 @app.get("/tasks")
 def get_tasks():
-    return tasks
-
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM tasks").fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
 @app.get("/tasks/{task_id}")
 def get_task(task_id: int):
-    for task in tasks:
-        if task["id"] == task_id:
-            return task
+    conn = get_db()
+    row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    conn.close()
+    if row:
+        return dict(row)
     raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-
 
 @app.post("/tasks")
 def create_task(title: str = Body(..., embed=True)):
