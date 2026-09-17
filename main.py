@@ -58,15 +58,18 @@ def get_task(task_id: int):
     if row:
         return dict(row)
     raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-
 @app.post("/tasks")
 def create_task(title: str = Body(..., embed=True)):
     if not title or not title.strip():
         raise HTTPException(status_code=400, detail="Title is required")
-    new_id = max([t["id"] for t in tasks], default=0) + 1
-    new_task = {"id": new_id, "title": title, "done": False}
-    tasks.append(new_task)
-    return new_task
+    conn = get_db()
+    cursor = conn.execute("INSERT INTO tasks (title, done) VALUES (?, ?)", (title, False))
+    conn.commit()
+    new_id = cursor.lastrowid
+    row = conn.execute("SELECT * FROM tasks WHERE id = ?", (new_id,)).fetchone()
+    conn.close()
+    return dict(row)
+
 @app.put("/tasks/{task_id}")
 def update_task(task_id: int, title: str = Body(None), done: bool = Body(None)):
     for task in tasks:
