@@ -1,0 +1,22 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: taskpass123
+      POSTGRES_DB: tasksdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://postgres:taskpass123@db:5432/tasksdb
+    depends_on:
+      - db
+
+volumes:
+  pgdata:
