@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Body
+from fastapi import FastAPI, HTTPException, Body, Header
 import psycopg2
 import psycopg2.extras
 import os
@@ -136,3 +136,18 @@ def login(email: str = Body(...), password: str = Body(...)):
         "access_token": result.session.access_token,
         "refresh_token": result.session.refresh_token,
     }
+
+@app.get("/public/info")
+def public_info():
+    return {"message": "This is a public route, no login needed"}
+
+@app.get("/protected/profile")
+def protected_profile(authorization: str = Header(None)):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing token")
+    token = authorization.replace("Bearer ", "")
+    try:
+        user = supabase.auth.get_user(token)
+        return {"user": user.user}
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
