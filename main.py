@@ -4,7 +4,10 @@ import psycopg2.extras
 import os
 from dotenv import load_dotenv
 
+from supabase import create_client, Client
 load_dotenv()
+
+supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
 app = FastAPI()
 
@@ -113,3 +116,23 @@ def delete_task(task_id: int):
     cur.close()
     conn.close()
     return
+@app.post("/auth/signup", status_code=201)
+def signup(email: str = Body(...), password: str = Body(...)):
+    if not email or not password:
+        raise HTTPException(status_code=400, detail="email and password are required")
+    result = supabase.auth.sign_up({"email": email, "password": password})
+    return {"user": result.user}
+
+
+@app.post("/auth/login")
+def login(email: str = Body(...), password: str = Body(...)):
+    if not email or not password:
+        raise HTTPException(status_code=400, detail="email and password are required")
+    try:
+        result = supabase.auth.sign_in_with_password({"email": email, "password": password})
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid login credentials")
+    return {
+        "access_token": result.session.access_token,
+        "refresh_token": result.session.refresh_token,
+    }
