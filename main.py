@@ -151,3 +151,14 @@ def protected_profile(authorization: str = Header(None)):
         return {"user": user.user}
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+@app.post("/auth/logout")
+def logout(authorization: str = Header(None)):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing token")
+    token = authorization.replace("Bearer ", "")
+    try:
+        supabase.auth.sign_out()
+        return {"message": "Logged out successfully"}
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
