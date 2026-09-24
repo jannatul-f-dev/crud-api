@@ -43,3 +43,25 @@ In this project the SQL queries are written directly inside the route functions 
 4. Stopped everything with Ctrl+C and docker compose down (containers removed)
 5. Ran docker compose up again
 6. Opened http://127.0.0.1:8000/tasks and all 4 tasks were still there
+
+## Authentication (Supabase Auth)
+
+This project uses Supabase Auth for user signup, login, logout, and protecting routes with JWT tokens.
+
+- `SUPABASE_URL` and `SUPABASE_KEY` are stored in `.env` (not committed)
+- Auth routes:
+  - `POST /auth/signup` — create a new user (email + password)
+  - `POST /auth/login` — returns an `access_token` (JWT) and `refresh_token`
+  - `POST /auth/logout` — requires a Bearer token, signs the user out
+- Route protection:
+  - `GET /public/info` — open to everyone, no token needed
+  - `GET /protected/profile` — requires a valid Bearer token; returns the logged-in user's info
+- Swagger UI has an "Authorize" button (top right of `/docs`) — paste the `access_token` there to test protected routes directly in the browser
+
+### How to test auth
+
+1. Call `POST /auth/signup` with an email and password to create a user
+2. Call `POST /auth/login` with the same credentials to get an `access_token`
+3. Click "Authorize" in Swagger UI and paste the token (no need to type "Bearer ", Swagger adds it)
+4. Call `GET /protected/profile` — it should return the user's info
+5. Call `POST /auth/logout` to sign out
