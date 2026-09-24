@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException, Body, Header
+from fastapi import FastAPI, HTTPException, Body, Header, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import psycopg2
 import psycopg2.extras
 import os
@@ -10,6 +11,7 @@ load_dotenv()
 supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
 app = FastAPI()
+security = HTTPBearer()
 
 def get_db():
     conn = psycopg2.connect(os.getenv("DATABASE_URL"), cursor_factory=psycopg2.extras.RealDictCursor)
@@ -140,12 +142,9 @@ def login(email: str = Body(...), password: str = Body(...)):
 @app.get("/public/info")
 def public_info():
     return {"message": "This is a public route, no login needed"}
-
 @app.get("/protected/profile")
-def protected_profile(authorization: str = Header(None)):
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Missing token")
-    token = authorization.replace("Bearer ", "")
+def protected_profile(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
     try:
         user = supabase.auth.get_user(token)
         return {"user": user.user}
