@@ -1,16 +1,53 @@
+
 import os
+import re
 import time
 import json
 from datetime import datetime, timezone
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
+from pydantic import BaseModel, field_validator
 
 USER_AGENT = "polite-scraper-student-project/1.0 (learning assignment; jannatul-f-dev)"
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", "cache")
+OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "output")
 DELAY_SECONDS = 0.6
 START_URL = "https://books.toscrape.com/catalogue/page-1.html"
 MAX_PAGES = 3
+
+
+class Book(BaseModel):
+    title: str
+    product_url: str
+    price_text: str
+    price_gbp: float
+    availability_text: str
+    rating_text: str | None = None
+    description: str | None = None
+    source_page: str
+    fetched_at: str
+
+    @field_validator("title")
+    @classmethod
+    def title_not_empty(cls, v):
+        if not v.strip():
+            raise ValueError("title is empty")
+        return v
+
+    @field_validator("product_url", "source_page")
+    @classmethod
+    def must_be_https(cls, v):
+        if not v.startswith("https://"):
+            raise ValueError("URL must start with https://")
+        return v
+
+    @field_validator("price_gbp")
+    @classmethod
+    def price_positive(cls, v):
+        if v <= 0:
+            raise ValueError("price must be greater than 0")
+        return v
 
 
 def fetch_page(url, filename):
@@ -97,6 +134,21 @@ def extract_book(html, product_url, source_page, fetched_at):
     }
 
 
+def normalize(raw):
+    data = dict(raw)
+    match = re.search(r"\d+(?:\.\d+)?", raw["price_text"])
+    if not match:
+        raise ValueError("no number found in price_text")
+    data["price_gbp"] = float(match.group())
+    return data
+
+
+def save_json(filename, data):
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    with open(os.path.join(OUTPUT_DIR, filename), "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
 if __name__ == "__main__":
     links = discover_all_links()
     records = []
@@ -109,6 +161,17 @@ if __name__ == "__main__":
         mtime = os.path.getmtime(os.path.join(CACHE_DIR, filename))
         fetched_at = datetime.fromtimestamp(mtime, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         records.append(extract_book(html, url, source_page, fetched_at))
-
-    print(json.dumps(records[0], indent=2))
     print(f"detail_pages={len(records)}")
+
+    valid = {}
+    errors = []
+    for raw in records:
+        try:
+            book = Book(**normalize(raw))
+            valid[book.product_url] = book.model_dump()
+        except ValueError as e:
+            errors.append({"product_url": raw.get("product_url"), "reason": str(e)})
+
+    save_json("books.json", list(valid.values()))
+    save_json("errors.json", errors)
+    print(f"valid={len(valid)}, invalid={len(errors)}")
