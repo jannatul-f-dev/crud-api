@@ -1,4 +1,3 @@
-
 import os
 import re
 import time
@@ -13,8 +12,14 @@ USER_AGENT = "polite-scraper-student-project/1.0 (learning assignment; jannatul-
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", "cache")
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "output")
 DELAY_SECONDS = 0.6
+RETRY_WAIT_SECONDS = 2
 START_URL = "https://books.toscrape.com/catalogue/page-1.html"
 MAX_PAGES = 3
+
+# TEST ONLY: put a made-up URL here to prove one bad page does not kill the run.
+EXTRA_TEST_URLS = []
+
+STATS = {"pages_fetched": 0, "cache_hits": 0, "failed_pages": 0}
 
 
 class Book(BaseModel):
@@ -57,21 +62,37 @@ def fetch_page(url, filename):
     if os.path.exists(filepath):
         with open(filepath, "r", encoding="utf-8") as f:
             html = f.read()
+        STATS["cache_hits"] += 1
         print(f"CACHE HIT: {filename} ({len(html)} bytes)")
         return html
 
-    time.sleep(DELAY_SECONDS)
     headers = {"User-Agent": USER_AGENT}
-    response = requests.get(url, headers=headers, timeout=5)
-
-    if response.status_code != 200:
+    response = None
+    for attempt in (1, 2):
+        time.sleep(DELAY_SECONDS if attempt == 1 else RETRY_WAIT_SECONDS)
+        try:
+            response = requests.get(url, headers=headers, timeout=5)
+        except requests.RequestException as e:
+            print(f"ATTEMPT {attempt} ERROR: {url} ({type(e).__name__})")
+            continue
+        if response.status_code == 200:
+            break
+        if response.status_code >= 500:
+            print(f"ATTEMPT {attempt} SERVER ERROR {response.status_code}: {url}")
+            continue
         print(f"FETCH FAILED: {url} returned status {response.status_code}")
+        STATS["failed_pages"] += 1
+        return None
+    else:
+        print(f"FETCH FAILED: {url} after 2 attempts")
+        STATS["failed_pages"] += 1
         return None
 
     response.encoding = "utf-8"
     html = response.text
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(html)
+    STATS["pages_fetched"] += 1
     print(f"FETCH: {filename} ({len(html)} bytes)")
     return html
 
@@ -150,7 +171,13 @@ def save_json(filename, data):
 
 
 if __name__ == "__main__":
+    started = datetime.now(timezone.utc)
+    t0 = time.time()
+
     links = discover_all_links()
+    for test_url in EXTRA_TEST_URLS:
+        links[test_url] = START_URL
+
     records = []
     for url, source_page in links.items():
         slug = url.rstrip("/").split("/")[-2]
@@ -158,9 +185,13 @@ if __name__ == "__main__":
         html = fetch_page(url, filename)
         if html is None:
             continue
-        mtime = os.path.getmtime(os.path.join(CACHE_DIR, filename))
-        fetched_at = datetime.fromtimestamp(mtime, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        records.append(extract_book(html, url, source_page, fetched_at))
+        try:
+            mtime = os.path.getmtime(os.path.join(CACHE_DIR, filename))
+            fetched_at = datetime.fromtimestamp(mtime, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            records.append(extract_book(html, url, source_page, fetched_at))
+        except Exception as e:
+            print(f"PARSE FAILED: {url} ({e})")
+            STATS["failed_pages"] += 1
     print(f"detail_pages={len(records)}")
 
     valid = {}
@@ -174,4 +205,16 @@ if __name__ == "__main__":
 
     save_json("books.json", list(valid.values()))
     save_json("errors.json", errors)
+
+    report = {
+        "started_at": started.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "duration_seconds": round(time.time() - t0, 2),
+        "pages_fetched": STATS["pages_fetched"],
+        "cache_hits": STATS["cache_hits"],
+        "valid_records": len(valid),
+        "invalid_records": len(errors),
+        "failed_pages": STATS["failed_pages"],
+    }
+    save_json("run-report.json", report)
     print(f"valid={len(valid)}, invalid={len(errors)}")
+    print(json.dumps(report, indent=2))
